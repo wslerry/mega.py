@@ -26,6 +26,10 @@ from .crypto import (
 logger = logging.getLogger(__name__)
 
 
+def _log_request_failed(*args, **kwargs):
+    logger.info('Request failed, sleeping then retrying...')
+
+
 class Mega:
     def __init__(self, options=None):
         self.schema = 'https'
@@ -141,7 +145,8 @@ class Mega:
 
     @retry(
         retry=retry_if_exception_type(RuntimeError),
-        wait=wait_exponential(multiplier=2, min=2, max=60)
+        wait=wait_exponential(multiplier=2, min=2, max=60),
+        before_sleep=_log_request_failed,
     )
     def _api_request(self, data):
         params = {'id': self.sequence_num}
@@ -164,9 +169,7 @@ class Mega:
         json_resp = json.loads(req.text)
         if isinstance(json_resp, int):
             if json_resp == -3:
-                msg = 'Request failed, retrying'
-                logger.info(msg)
-                raise RuntimeError(msg)
+                raise RuntimeError('Request failed, retrying')
             raise RequestError(json_resp)
         return json_resp[0]
 
@@ -301,6 +304,10 @@ class Mega:
         """
         Return file object from given filename
         """
+
+        def found(cloud_filename, search_filename):
+            return cloud_filename == search_filename
+
         files = self.get_files()
         if handle:
             return files[handle]
@@ -308,6 +315,12 @@ class Mega:
         filename = path.name
         parent_dir_name = path.parent.name
         for file in list(files.items()):
+            try:
+                cloud_file_name = file[1]['a']['n']
+                cloud_file_parent_node_id = file[1]['p']
+            except (KeyError, TypeError):
+                logger.debug('Filename attribute not found, skipping %s', file)
+                continue
             parent_node_id = None
             if parent_dir_name:
                 parent_node_id = self.find_path_descriptor(
@@ -315,22 +328,21 @@ class Mega:
                 )
                 if (
                     filename and parent_node_id and
-                    file[1]['a'] and file[1]['a']['n'] == filename and
-                    parent_node_id == file[1]['p']
+                    found(cloud_file_name, filename) and
+                    parent_node_id == cloud_file_parent_node_id
                 ):
                     if (
                         exclude_deleted and
-                        self._trash_folder_node_id == file[1]['p']
+                        self._trash_folder_node_id == cloud_file_parent_node_id
                     ):
                         continue
                     return file
             if (
-                filename and
-                file[1]['a'] and file[1]['a']['n'] == filename
+                filename and found(cloud_file_name, filename)
             ):
                 if (
                     exclude_deleted and
-                    self._trash_folder_node_id == file[1]['p']
+                    self._trash_folder_node_id == cloud_file_parent_node_id
                 ):
                     continue
                 return file

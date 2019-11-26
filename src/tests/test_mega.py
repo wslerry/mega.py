@@ -20,7 +20,7 @@ def folder_name():
 
 @pytest.fixture
 def mega(folder_name):
-    mega_ = Mega()
+    mega_ = Mega({'verbose': True})
     mega_.login(email=os.environ['EMAIL'], password=os.environ['PASS'])
     created_nodes = mega_.create_folder(folder_name)
     yield mega_
@@ -151,6 +151,16 @@ class TestFind:
             __file__, dest=dest_node_id, dest_filename='test.py'
         )
         path = f'{folder_name}/test.py'
+
+        assert mega.find(path)
+
+    def test_find_file2(self, mega, folder_name):
+        folder = mega.find(folder_name)
+        dest_node_id = folder[1]['h']
+        mega.upload(
+            __file__, dest=dest_node_id, dest_filename='test.py'
+        )
+        path = f'{folder_name}/te*.py'
 
         assert mega.find(path)
 
