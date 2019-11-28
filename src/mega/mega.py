@@ -2,6 +2,7 @@ import re
 import json
 import logging
 import secrets
+import time
 from pathlib import Path
 import hashlib
 from Crypto.Cipher import AES
@@ -143,11 +144,11 @@ class Mega:
             sid = binascii.unhexlify('0' + sid if len(sid) % 2 else sid)
             self.sid = base64_url_encode(sid[:43])
 
-    @retry(
-        retry=retry_if_exception_type(RuntimeError),
-        wait=wait_exponential(multiplier=2, min=2, max=60),
-        before_sleep=_log_request_failed,
-    )
+    # @retry(
+    #     retry=retry_if_exception_type(RuntimeError),
+    #     wait=wait_exponential(multiplier=2, min=2, max=60),
+    #     before_sleep=_log_request_failed,
+    # )
     def _api_request(self, data):
         params = {'id': self.sequence_num}
         self.sequence_num += 1
@@ -169,7 +170,10 @@ class Mega:
         json_resp = json.loads(req.text)
         if isinstance(json_resp, int):
             if json_resp == -3:
-                raise RuntimeError('Request failed, retrying')
+                logger.info('Request failed, sleeping 20 then retrying...')
+                time.sleep(2)
+                return self._api_request(data=data)
+                # raise RuntimeError('Request failed, retrying')
             raise RequestError(json_resp)
         return json_resp[0]
 
