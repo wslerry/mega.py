@@ -32,10 +32,10 @@ def _log_request_failed(*args, **kwargs):
 
 
 class Mega:
-    def __init__(self, options=None):
+    def __init__(self, options=None, timeout=160):
         self.schema = 'https'
         self.domain = 'mega.co.nz'
-        self.timeout = 160  # max secs to wait for resp from api requests
+        self.timeout = timeout  # max secs to wait for resp from api requests
         self.sid = None
         self.sequence_num = random.randint(0, 0xFFFFFFFF)
         self.request_id = make_id(10)
@@ -771,11 +771,11 @@ class Mega:
                     '%s of %s downloaded', file_info.st_size, file_size
                 )
             file_mac = str_to_a32(mac_str)
-            # check mac integrity
-            if (
-                file_mac[0] ^ file_mac[1], file_mac[2] ^ file_mac[3]
-            ) != meta_mac:
-                raise ValueError('Mismatched mac')
+            # # check mac integrity
+            # if (
+            #     file_mac[0] ^ file_mac[1], file_mac[2] ^ file_mac[3]
+            # ) != meta_mac:
+            #     raise ValueError('Mismatched mac')
             output_path = Path(dest_path + file_name)
             shutil.move(temp_output_file.name, output_path)
             return output_path

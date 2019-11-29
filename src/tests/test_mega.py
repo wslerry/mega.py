@@ -20,7 +20,7 @@ def folder_name():
 
 @pytest.fixture
 def mega(folder_name):
-    mega_ = Mega({'verbose': True})
+    mega_ = Mega({'verbose': True}, timeout=300)
     mega_.login(email=os.environ['EMAIL'], password=os.environ['PASS'])
     created_nodes = mega_.create_folder(folder_name)
     yield mega_
