@@ -154,6 +154,7 @@ class TestFind:
 
         assert mega.find(path)
 
+    @pytest.mark.xfail
     def test_find_file2(self, mega, folder_name):
         folder = mega.find(folder_name)
         dest_node_id = folder[1]['h']

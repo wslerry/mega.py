@@ -13,7 +13,10 @@ import random
 import binascii
 import tempfile
 import shutil
+from threading import RLock
+import functools
 
+from joblib import Memory
 import requests
 from tenacity import retry, wait_exponential, retry_if_exception_type
 
@@ -26,9 +29,23 @@ from .crypto import (
 
 logger = logging.getLogger(__name__)
 
+location = '/tmp'
+memory = Memory(location, verbose=0)
+
 
 def _log_request_failed(*args, **kwargs):
-    logger.info('Request failed, sleeping then retrying...')
+    logger.info(
+        'Request failed, sleeping then retrying... %s %s', args, kwargs
+    )
+
+
+def write_operation(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        result = method(self, *args, **kwargs)
+        self._clear_cache()
+        return result
+    return wrapper
 
 
 class Mega:
@@ -44,6 +61,10 @@ class Mega:
         if options is None:
             options = {}
         self.options = options
+        self.get_files = memory.cache(self.get_files)
+
+    def _clear_cache(self):
+        memory.clear(warn=False)
 
     def login(self, email=None, password=None):
         if email:
@@ -144,11 +165,11 @@ class Mega:
             sid = binascii.unhexlify('0' + sid if len(sid) % 2 else sid)
             self.sid = base64_url_encode(sid[:43])
 
-    # @retry(
-    #     retry=retry_if_exception_type(RuntimeError),
-    #     wait=wait_exponential(multiplier=2, min=2, max=60),
-    #     before_sleep=_log_request_failed,
-    # )
+    @retry(
+        retry=retry_if_exception_type(RuntimeError),
+        wait=wait_exponential(multiplier=2, min=2, max=60),
+        before_sleep=_log_request_failed,
+    )
     def _api_request(self, data):
         params = {'id': self.sequence_num}
         self.sequence_num += 1
@@ -170,10 +191,7 @@ class Mega:
         json_resp = json.loads(req.text)
         if isinstance(json_resp, int):
             if json_resp == -3:
-                logger.info('Request failed, sleeping 20 then retrying...')
-                time.sleep(2)
-                return self._api_request(data=data)
-                # raise RuntimeError('Request failed, retrying')
+                raise RuntimeError('Request failed, retrying')
             raise RequestError(json_resp)
         return json_resp[0]
 
@@ -450,6 +468,7 @@ class Mega:
             if node[1]['t'] == type:
                 return node
 
+    @write_operation
     def get_files_in_node(self, target):
         """
         Get all files in a given target, e.g. 4=trash
@@ -548,6 +567,7 @@ class Mega:
         file_id = self.get_id_from_public_handle(public_handle)
         return self.move(file_id, 4)
 
+    @write_operation
     def destroy(self, file_id):
         """
         Destroy a file by its private id
@@ -569,10 +589,10 @@ class Mega:
         file_id = self.get_id_from_public_handle(public_handle)
         return self.destroy(file_id)
 
+    @write_operation
     def empty_trash(self):
         # get list of files in rubbish out
         files = self.get_files_in_node(4)
-
         # make a list of json
         if files != {}:
             post_list = []
@@ -593,6 +613,7 @@ class Mega:
             is_public=False
         )
 
+    @write_operation
     def _export_file(self, node):
         node_data = self._node_data(node)
         self._api_request([
@@ -604,6 +625,7 @@ class Mega:
         ])
         return self.get_link(node)
 
+    @write_operation
     def export(self, path=None, node_id=None):
         nodes = self.get_files()
         if node_id:
@@ -652,6 +674,7 @@ class Mega:
             }
         ]
         self._api_request(request_body)
+        self._clear_cache()
         nodes = self.get_files()
         return self.get_folder_link(nodes[node_id])
 
@@ -780,6 +803,7 @@ class Mega:
             shutil.move(temp_output_file.name, output_path)
             return output_path
 
+    @write_operation
     def upload(self, filename, dest=None, dest_filename=None):
         # determine storage node
         if dest is None:
@@ -885,6 +909,7 @@ class Mega:
             logger.info('Upload complete')
             return data
 
+    @write_operation
     def _mkdir(self, name, parent_node_id):
         # generate random aes key (128) for folder
         ul_key = [random.randint(0, 0xFFFFFFFF) for _ in range(6)]
@@ -917,6 +942,7 @@ class Mega:
             self.get_files()
         return self.root_id
 
+    @write_operation
     def create_folder(self, name, dest=None):
         dirs = tuple(dir_name for dir_name in str(name).split('/') if dir_name)
         folder_node_ids = {}
@@ -939,6 +965,7 @@ class Mega:
             folder_node_ids[idx] = node_id
         return dict(zip(dirs, folder_node_ids.values()))
 
+    @write_operation
     def rename(self, file, new_name):
         file = file[1]
         # create new attribs
@@ -961,6 +988,7 @@ class Mega:
             ]
         )
 
+    @write_operation
     def move(self, file_id, target):
         """
         Move a file to another parent node
@@ -980,7 +1008,6 @@ class Mega:
         or...
         target's structure returned by find()
         """
-
         # determine target_node_id
         if type(target) == int:
             target_node_id = str(self.get_node_by_type(target)[0])
@@ -1072,6 +1099,7 @@ class Mega:
         result = {'size': size, 'name': unencrypted_attrs['n']}
         return result
 
+    @write_operation
     def import_public_file(
         self, file_handle, file_key, dest_node=None, dest_name=None
     ):
