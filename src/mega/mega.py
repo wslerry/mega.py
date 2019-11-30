@@ -2,7 +2,6 @@ import re
 import json
 import logging
 import secrets
-import time
 from pathlib import Path
 import hashlib
 from Crypto.Cipher import AES
@@ -13,7 +12,6 @@ import random
 import binascii
 import tempfile
 import shutil
-from threading import RLock
 import functools
 
 from joblib import Memory
@@ -33,10 +31,8 @@ location = '/tmp'
 memory = Memory(location, verbose=0)
 
 
-def _log_request_failed(*args, **kwargs):
-    logger.info(
-        'Request failed, sleeping then retrying... %s %s', args, kwargs
-    )
+def _log_request_failed(*args, sleep, **kwargs):
+    logger.info('Request failed, sleeping %s then retrying...', sleep)
 
 
 def write_operation(method):
@@ -61,10 +57,11 @@ class Mega:
         if options is None:
             options = {}
         self.options = options
-        self.get_files = memory.cache(self.get_files)
+        # self.get_files = memory.cache(self.get_files)
 
     def _clear_cache(self):
-        memory.clear(warn=False)
+        return
+        # memory.clear(warn=False)
 
     def login(self, email=None, password=None):
         if email:
@@ -191,6 +188,11 @@ class Mega:
         json_resp = json.loads(req.text)
         if isinstance(json_resp, int):
             if json_resp == -3:
+                try:
+                    action = data[0]['a']
+                except KeyError:
+                    action = 'unknown'
+                logger.info('Request failed for action: %s', action)
                 raise RuntimeError('Request failed, retrying')
             raise RequestError(json_resp)
         return json_resp[0]
@@ -371,15 +373,19 @@ class Mega:
 
     def get_files(self):
         logger.info('Getting all files...')
+        logger.info('Sending get files request')
         files = self._api_request({'a': 'f', 'c': 1, 'r': 1})
         files_dict = {}
         shared_keys = {}
+        logger.info('Init shared keys')
         self._init_shared_keys(files, shared_keys)
+        logger.info('Processing files')
         for file in files['f']:
             processed_file = self._process_file(file, shared_keys)
             # ensure each file has a name before returning
             if processed_file['a']:
                 files_dict[file['h']] = processed_file
+        logger.info('Done processing files')
         return files_dict
 
     def get_upload_link(self, file):
