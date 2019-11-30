@@ -373,19 +373,20 @@ class Mega:
 
     def get_files(self):
         logger.info('Getting all files...')
-        logger.info('Sending get files request')
+        logger.debug('Sending get files request')
         files = self._api_request({'a': 'f', 'c': 1, 'r': 1})
         files_dict = {}
         shared_keys = {}
-        logger.info('Init shared keys')
+        logger.debug('Init shared keys')
         self._init_shared_keys(files, shared_keys)
-        logger.info('Processing files')
+        logger.debug('Processing files')
         for file in files['f']:
+            logger.info('Processing file')
             processed_file = self._process_file(file, shared_keys)
             # ensure each file has a name before returning
             if processed_file['a']:
                 files_dict[file['h']] = processed_file
-        logger.info('Done processing files')
+        logger.debug('Done processing files')
         return files_dict
 
     def get_upload_link(self, file):
@@ -393,6 +394,7 @@ class Mega:
         Get a files public link inc. decrypted key
         Requires upload() response as input
         """
+        logger.info('Getting upload link')
         if 'f' in file:
             file = file['f'][0]
             public_handle = self._api_request({'a': 'l', 'n': file['h']})
@@ -414,6 +416,7 @@ class Mega:
         """
         Get a file public link from given file object
         """
+        logger.info('Getting link')
         file = file[1]
         if 'h' in file and 'k' in file:
             public_handle = self._api_request({'a': 'l', 'n': file['h']})
@@ -437,6 +440,7 @@ class Mega:
             return node
 
     def get_folder_link(self, file):
+        logger.info('Getting folder link')
         try:
             file = file[1]
         except (IndexError, KeyError):
@@ -457,6 +461,7 @@ class Mega:
             raise ValidationError('File id and key must be present')
 
     def get_user(self):
+        logger.info('Getting user')
         user_data = self._api_request({'a': 'ug'})
         return user_data
 
@@ -469,6 +474,7 @@ class Mega:
         3: special: inbox
         4: special trash bin
         """
+        logger.info('Getting node by type')
         nodes = self.get_files()
         for node in list(nodes.items()):
             if node[1]['t'] == type:
@@ -479,6 +485,7 @@ class Mega:
         """
         Get all files in a given target, e.g. 4=trash
         """
+        logger.info('Getting files in node')
         if type(target) == int:
             # convert special nodes (e.g. trash)
             node_id = self.get_node_by_type(target)
@@ -496,6 +503,7 @@ class Mega:
         return files_dict
 
     def get_id_from_public_handle(self, public_handle):
+        logger.info('Getting ID from public handle')
         # get node data
         node_data = self._api_request({'a': 'f', 'f': 1, 'p': public_handle})
         node_id = self.get_id_from_obj(node_data)
@@ -505,6 +513,7 @@ class Mega:
         """
         Get node id from a file object
         """
+        logger.info('Getting ID from obj')
         node_id = None
 
         for i in node_data['f']:
@@ -633,11 +642,14 @@ class Mega:
 
     @write_operation
     def export(self, path=None, node_id=None):
+        logger.info('Exporting')
+        logger.debug('Finding node to export')
         nodes = self.get_files()
         if node_id:
             node = nodes[node_id]
         else:
             node = self.find(path)
+        logger.debug('Found node to export')
 
         node_data = self._node_data(node)
         is_file_node = node_data['t'] == 0
@@ -679,8 +691,10 @@ class Mega:
                 'cr': [[node_id], [node_id], [0, 0, encrypted_node_key]]
             }
         ]
+        logger.debug('Sending export request')
         self._api_request(request_body)
         self._clear_cache()
+        logger.debug('Export request sent')
         nodes = self.get_files()
         return self.get_folder_link(nodes[node_id])
 
@@ -708,6 +722,7 @@ class Mega:
         is_public=False,
         file=None
     ):
+        logger.info('Downloading file')
         if file is None:
             if is_public:
                 file_key = base64_to_a32(file_key)
@@ -811,6 +826,7 @@ class Mega:
 
     @write_operation
     def upload(self, filename, dest=None, dest_filename=None):
+        logger.info('Uploading file')
         # determine storage node
         if dest is None:
             # if none set, upload to cloud drive node
@@ -950,6 +966,7 @@ class Mega:
 
     @write_operation
     def create_folder(self, name, dest=None):
+        logger.info('Creating folder')
         dirs = tuple(dir_name for dir_name in str(name).split('/') if dir_name)
         folder_node_ids = {}
         for idx, directory_name in enumerate(dirs):
@@ -973,6 +990,7 @@ class Mega:
 
     @write_operation
     def rename(self, file, new_name):
+        logger.info('Renaming node')
         file = file[1]
         # create new attribs
         attribs = {'n': new_name}
@@ -1014,6 +1032,7 @@ class Mega:
         or...
         target's structure returned by find()
         """
+        logger.info('Moving node')
         # determine target_node_id
         if type(target) == int:
             target_node_id = str(self.get_node_by_type(target)[0])
@@ -1070,6 +1089,7 @@ class Mega:
         """
         Get size and name from a public url, dict returned
         """
+        logger.info('Getting public url info')
         file_handle, file_key = self._parse_url(url).split('!')
         return self.get_public_file_info(file_handle, file_key)
 
@@ -1086,6 +1106,7 @@ class Mega:
         """
         Get size and name of a public file
         """
+        logger.info('Getting public file info')
         data = self._api_request({'a': 'g', 'p': file_handle, 'ssm': 1})
         if isinstance(data, int):
             raise RequestError(data)
@@ -1112,6 +1133,7 @@ class Mega:
         """
         Import the public file into user account
         """
+        logger.info('Importing public file')
         # Providing dest_node spare an API call to retrieve it.
         if dest_node is None:
             # Get '/Cloud Drive' folder no dest node specified
