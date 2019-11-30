@@ -381,7 +381,6 @@ class Mega:
         self._init_shared_keys(files, shared_keys)
         logger.debug('Processing files')
         for file in files['f']:
-            logger.info('Processing file')
             processed_file = self._process_file(file, shared_keys)
             # ensure each file has a name before returning
             if processed_file['a']:
